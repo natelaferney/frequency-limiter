@@ -28,7 +28,7 @@ FrequencyLimiterAudioProcessor::FrequencyLimiterAudioProcessor()
                        ),
 #endif
 	parameters(*this, nullptr, Identifier("FrequencyCleaner"),
-		{ std::make_unique<AudioParameterFloat>("threshold", "Threshold", NormalisableRange<float>(-120.0f, 0.0f, 0.1f), 0.0f),
+		{ std::make_unique<AudioParameterFloat>("threshold", "Threshold", NormalisableRange<float>(-100.0f, 0.0f, 0.1f), 0.0f),
 		std::make_unique<AudioParameterFloat>("gain", "Makeup Gain", NormalisableRange<float>(0.0f, 20.0f, 0.1f), 0.0f),
 		std::make_unique<AudioParameterFloat>("mix", "Mix", NormalisableRange<float>(0.0f, 100.0f, 1.0f), 100.0f)})
 {
@@ -36,7 +36,7 @@ FrequencyLimiterAudioProcessor::FrequencyLimiterAudioProcessor()
 	gain = parameters.getRawParameterValue("gain");
 	mix = parameters.getRawParameterValue("mix");
 	cfgFFT = NULL;
-	cfgFFT = NULL;
+	cfgIFFT = NULL;
 }
 
 FrequencyLimiterAudioProcessor::~FrequencyLimiterAudioProcessor()
