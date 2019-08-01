@@ -189,16 +189,15 @@ void FrequencyLimiterAudioProcessor::processBlock (AudioBuffer<float>& buffer, M
 			newSampleValue = (mixValue * realBufferFFT[i]) + ((1 - mixValue) * buffer.getSample(channel, i));
 			buffer.setSample(channel, i, newSampleValue);
 		}
-
-		if (gainValue != previousGain)
-		{
-			buffer.applyGainRamp(0, bufferSize, previousGain, gainValue);
-			previousGain = gainValue;
-		}
-		else
-		{
-			buffer.applyGain(gainValue);
-		}
+	}
+	if (gainValue != previousGain)
+	{
+		buffer.applyGainRamp(0, bufferSize, previousGain, gainValue);
+		previousGain = gainValue;
+	}
+	else
+	{
+		buffer.applyGain(gainValue);
 	}
 }
 
