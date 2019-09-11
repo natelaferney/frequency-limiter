@@ -18,19 +18,20 @@ static const kiss_fft_cpx zeroComplex = { 0.0f, 0.0f };
 //==============================================================================
 FrequencyLimiterAudioProcessor::FrequencyLimiterAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
-     : AudioProcessor (BusesProperties()
-                     #if ! JucePlugin_IsMidiEffect
-                      #if ! JucePlugin_IsSynth
-                       .withInput  ("Input",  AudioChannelSet::stereo(), true)
-                      #endif
-                       .withOutput ("Output", AudioChannelSet::stereo(), true)
-                     #endif
-                       ),
+	: AudioProcessor(BusesProperties()
+#if ! JucePlugin_IsMidiEffect
+#if ! JucePlugin_IsSynth
+		.withInput("Input", AudioChannelSet::stereo(), true)
+#endif
+		.withOutput("Output", AudioChannelSet::stereo(), true)
+#endif
+	),
 #endif
 	parameters(*this, nullptr, Identifier("FrequencyCleaner"),
 		{ std::make_unique<AudioParameterFloat>("threshold", "Threshold", NormalisableRange<float>(-100.0f, 0.0f, 0.1f), 0.0f),
 		std::make_unique<AudioParameterFloat>("gain", "Makeup Gain", NormalisableRange<float>(0.0f, 20.0f, 0.1f), 0.0f),
-		std::make_unique<AudioParameterFloat>("mix", "Mix", NormalisableRange<float>(0.0f, 100.0f, 1.0f), 100.0f)})
+		std::make_unique<AudioParameterFloat>("mix", "Mix", NormalisableRange<float>(0.0f, 100.0f, 1.0f), 100.0f) }),
+	window(1024, dsp::WindowingFunction<float>::hann)
 {
 	threshold = parameters.getRawParameterValue("threshold");
 	gain = parameters.getRawParameterValue("gain");
@@ -103,10 +104,14 @@ void FrequencyLimiterAudioProcessor::prepareToPlay (double sampleRate, int sampl
 	if (N % 2 == 1) N += 1;
 	int K = N / 2 + 1;
 	realBufferFFT.resize(N, 0.0f);
-	complexBufferFFT.resize(K);
+	complexBufferFFT.resize(K, zeroComplex);
 	cfgFFT = kiss_fftr_alloc(N, 0, NULL, NULL);
 	cfgIFFT = kiss_fftr_alloc(N, 1, NULL, NULL);
 	oldSamplesPerBlock = N;
+
+	//windowing function
+	sidechainBufferFFT.resize(K, zeroComplex);
+	window.fillWindowingTables(N, juce::dsp::WindowingFunction<float>::hann);
 }
 
 void FrequencyLimiterAudioProcessor::releaseResources()
@@ -124,6 +129,7 @@ void FrequencyLimiterAudioProcessor::releaseResources()
 
 	std::fill(realBufferFFT.begin(), realBufferFFT.end(), 0.0f);
 	std::fill(complexBufferFFT.begin(), complexBufferFFT.end(), zeroComplex);
+	std::fill(sidechainBufferFFT.begin(), sidechainBufferFFT.end(), zeroComplex);
 }
 
 bool FrequencyLimiterAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -144,7 +150,8 @@ void FrequencyLimiterAudioProcessor::processBlock (AudioBuffer<float>& buffer, M
 	int K = N / 2 + 1;
 	const float thresholdValue = Decibels::decibelsToGain(*threshold);
 	const float gainValue = Decibels::decibelsToGain(*gain);
-	float tempRadius;
+	float sidechainRadius;
+	float mainRadius;
 	float tempAngle;
 	float newRadius;
 	const float mixValue = *mix / 100.0f;
@@ -174,11 +181,14 @@ void FrequencyLimiterAudioProcessor::processBlock (AudioBuffer<float>& buffer, M
 	{
 		for (int i = 0; i < bufferSize; ++i) realBufferFFT[i] = buffer.getSample(channel, i);
 		kiss_fftr(cfgFFT, &realBufferFFT[0], &complexBufferFFT[0]);
+		window.multiplyWithWindowingTable(&realBufferFFT[0], N);
+		kiss_fftr(cfgFFT, &realBufferFFT[0], &sidechainBufferFFT[0]);
 		for (int i = 0; i < K; ++i)
 		{
-			tempRadius = std::sqrt(std::pow(std::abs(complexBufferFFT[i].r), 2) + std::pow(std::abs(complexBufferFFT[i].i), 2)) / N;
+			mainRadius = std::sqrt(std::pow(std::abs(complexBufferFFT[i].r), 2) + std::pow(std::abs(complexBufferFFT[i].i), 2)) / N;
+			sidechainRadius = std::sqrt(std::pow(std::abs(sidechainBufferFFT[i].r), 2) + std::pow(std::abs(sidechainBufferFFT[i].i), 2)) / N;
 			tempAngle = atan2(complexBufferFFT[i].i, complexBufferFFT[i].r);
-			newRadius = (tempRadius > thresholdValue) ? thresholdValue : tempRadius;
+			newRadius = (sidechainRadius > thresholdValue) ? thresholdValue : mainRadius;
 			tempComplex = std::polar(newRadius, tempAngle);
 			complexBufferFFT[i].r = std::real(tempComplex);
 			complexBufferFFT[i].i = std::imag(tempComplex);
@@ -225,7 +235,7 @@ void FrequencyLimiterAudioProcessor::getStateInformation (MemoryBlock& destData)
 
 void FrequencyLimiterAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-	XmlElement * xmlState = getXmlFromBinary(data, sizeInBytes);
+	std::unique_ptr<XmlElement> xmlState = getXmlFromBinary(data, sizeInBytes);
 	if (xmlState != nullptr)
 	{
 		const float thresholdValue = (float)xmlState->getDoubleAttribute("thresholdParameter", 1.0f);
@@ -244,7 +254,6 @@ void FrequencyLimiterAudioProcessor::setStateInformation (const void* data, int 
 		parameters.getParameter("gain")->endChangeGesture();
 		parameters.getParameter("mix")->endChangeGesture();
 	}
-	delete xmlState;
 }
 
 //==============================================================================
