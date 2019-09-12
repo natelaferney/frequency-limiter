@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<JUCERPROJECT id="YdNxnz" name="FrequencyLimiter" projectType="audioplug" jucerVersion="5.4.4"
+<JUCERPROJECT id="YdNxnz" name="FrequencyLimiter" projectType="audioplug" jucerVersion="5.4.1"
               companyName="NateOnTheBeat" companyWebsite="www.nateonthebeat.com"
               companyEmail="justnateonthebeat@gmail.com" pluginFormats="buildAU,buildStandalone,buildVST3"
               pluginAUIsSandboxSafe="1">

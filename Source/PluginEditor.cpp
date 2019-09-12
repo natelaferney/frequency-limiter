@@ -11,13 +11,16 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+static const Array<String> windowChoices = { "Rectangular", "Triangular", "Hann", "Hamming", "Blackman", "Blackman-Harris",
+"Flat Top" };
+
 //==============================================================================
 FrequencyLimiterAudioProcessorEditor::FrequencyLimiterAudioProcessorEditor (FrequencyLimiterAudioProcessor& p, AudioProcessorValueTreeState& vts)
     : AudioProcessorEditor (&p), processor (p), valueTreeState (vts)
 {
     // Make sure that before the constructor has finished, you've set the
     // editor's size to whatever you need it to be.
-	setSize(270, 500);
+	setSize(270, 550);
 
 	addAndMakeVisible(thresholdSlider = new Slider());
 	thresholdSlider->setBounds(35, 40, 50, 400);
@@ -48,6 +51,14 @@ FrequencyLimiterAudioProcessorEditor::FrequencyLimiterAudioProcessorEditor (Freq
 	addAndMakeVisible(gainLabel = new Label());
 	gainLabel->setBounds(202, 425, 100, 50);
 	gainLabel->setText("Gain", dontSendNotification);
+
+	addAndMakeVisible(windowComboBox = new ComboBox());
+	windowComboBox->setBounds(20, 480, 100, 26);
+	for (int i = 0; i < windowChoices.size(); ++i)
+	{
+		windowComboBox->addItem(windowChoices[i], i + 1);
+	}
+	windowComboBoxAttachment.reset(new ComboBoxAttachment(valueTreeState, "window", *windowComboBox));
 }
 
 FrequencyLimiterAudioProcessorEditor::~FrequencyLimiterAudioProcessorEditor()
@@ -69,6 +80,11 @@ void FrequencyLimiterAudioProcessorEditor::resized()
 }
 
 void FrequencyLimiterAudioProcessorEditor::sliderValueChanged(Slider * slider)
+{
+
+}
+
+void FrequencyLimiterAudioProcessorEditor::comboBoxChanged(ComboBox * comboBox)
 {
 
 }

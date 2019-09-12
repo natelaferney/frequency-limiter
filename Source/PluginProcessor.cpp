@@ -15,6 +15,8 @@
 static const int MINIMUM_BUFFER_SIZE = 32;
 static const float BUFFER_OFFSET_FACTOR = 1.5;
 static const kiss_fft_cpx zeroComplex = { 0.0f, 0.0f };
+static const Array<String> windowChoices = { "rectangular", "triangular", "hann", "hamming", "blackman", "blackmanHarris",
+"flatTop"};
 //==============================================================================
 FrequencyLimiterAudioProcessor::FrequencyLimiterAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -30,12 +32,14 @@ FrequencyLimiterAudioProcessor::FrequencyLimiterAudioProcessor()
 	parameters(*this, nullptr, Identifier("FrequencyCleaner"),
 		{ std::make_unique<AudioParameterFloat>("threshold", "Threshold", NormalisableRange<float>(-100.0f, 0.0f, 0.1f), 0.0f),
 		std::make_unique<AudioParameterFloat>("gain", "Makeup Gain", NormalisableRange<float>(0.0f, 20.0f, 0.1f), 0.0f),
-		std::make_unique<AudioParameterFloat>("mix", "Mix", NormalisableRange<float>(0.0f, 100.0f, 1.0f), 100.0f) }),
+		std::make_unique<AudioParameterFloat>("mix", "Mix", NormalisableRange<float>(0.0f, 100.0f, 1.0f), 100.0f),
+		std::make_unique<AudioParameterChoice>("window", "Window", windowChoices, 0) }),
 	window(1024, dsp::WindowingFunction<float>::hann)
 {
 	threshold = parameters.getRawParameterValue("threshold");
 	gain = parameters.getRawParameterValue("gain");
 	mix = parameters.getRawParameterValue("mix");
+	windowChoice = parameters.getRawParameterValue("window");
 	cfgFFT = NULL;
 	cfgIFFT = NULL;
 }
@@ -111,7 +115,10 @@ void FrequencyLimiterAudioProcessor::prepareToPlay (double sampleRate, int sampl
 
 	//windowing function
 	sidechainBufferFFT.resize(K, zeroComplex);
-	window.fillWindowingTables(N, juce::dsp::WindowingFunction<float>::hann);
+	int choiceOfWindow = (int)*windowChoice;
+	if (choiceOfWindow != currentWindowChoice) switchWindow(choiceOfWindow, N);
+
+	//window.fillWindowingTables(N, juce::dsp::WindowingFunction<float>::hann);
 }
 
 void FrequencyLimiterAudioProcessor::releaseResources()
@@ -156,6 +163,7 @@ void FrequencyLimiterAudioProcessor::processBlock (AudioBuffer<float>& buffer, M
 	float newRadius;
 	const float mixValue = *mix / 100.0f;
 	float newSampleValue;
+	int choiceOfWindow = (int)*windowChoice;
 	std::complex<float> tempComplex;
 	if (N < bufferSize)
 	{
@@ -171,6 +179,8 @@ void FrequencyLimiterAudioProcessor::processBlock (AudioBuffer<float>& buffer, M
 		cfgIFFT = kiss_fftr_alloc(N, 1, NULL, NULL);
 		oldSamplesPerBlock = N;
 	}
+
+	if (choiceOfWindow != currentWindowChoice) switchWindow(choiceOfWindow, N);
 
 	std::fill(realBufferFFT.begin(), realBufferFFT.end(), 0.0f);
 
@@ -229,31 +239,67 @@ void FrequencyLimiterAudioProcessor::getStateInformation (MemoryBlock& destData)
 	xml->setAttribute(Identifier("thresholdParameter"), (double)parameters.getParameter("threshold")->convertTo0to1(*threshold));
 	xml->setAttribute(Identifier("mixParameter"), (double)parameters.getParameter("mix")->convertTo0to1(*mix));
 	xml->setAttribute(Identifier("gainParameter"), (double)parameters.getParameter("gain")->convertTo0to1(*gain));
+	xml->setAttribute(Identifier("windowParameter"), (double)parameters.getParameter("window")->convertTo0to1(*windowChoice));
 	copyXmlToBinary(*xml, destData);
 	delete xml;
 }
 
 void FrequencyLimiterAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-	std::unique_ptr<XmlElement> xmlState = getXmlFromBinary(data, sizeInBytes);
+	std::unique_ptr<XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
 	if (xmlState != nullptr)
 	{
 		const float thresholdValue = (float)xmlState->getDoubleAttribute("thresholdParameter", 1.0f);
 		const float gainValue = (float)xmlState->getDoubleAttribute("gainParameter", 0.0f);
 		const float mixValue = (float)xmlState->getDoubleAttribute("mixParameter", 1.0f);
+		const float windowChoiceValue = (float)xmlState->getDoubleAttribute("windowParameter", 0.0f);
 
 		parameters.getParameter("threshold")->beginChangeGesture();
 		parameters.getParameter("gain")->beginChangeGesture();
 		parameters.getParameter("mix")->beginChangeGesture();
+		parameters.getParameter("window")->beginChangeGesture();
 
 		parameters.getParameter("threshold")->setValueNotifyingHost(thresholdValue);
 		parameters.getParameter("gain")->setValueNotifyingHost(gainValue);
 		parameters.getParameter("mix")->setValueNotifyingHost(mixValue);
+		parameters.getParameter("window")->setValueNotifyingHost(windowChoiceValue);
 
 		parameters.getParameter("threshold")->endChangeGesture();
 		parameters.getParameter("gain")->endChangeGesture();
 		parameters.getParameter("mix")->endChangeGesture();
+		parameters.getParameter("window")->endChangeGesture();
 	}
+}
+
+void FrequencyLimiterAudioProcessor::switchWindow(int choice, int bufferSize)
+{
+	switch (choice)
+	{
+	case 0:
+		window.fillWindowingTables(bufferSize, dsp::WindowingFunction<float>::rectangular);
+		break;
+	case 1:
+		window.fillWindowingTables(bufferSize, dsp::WindowingFunction<float>::triangular);
+		break;
+	case 2:
+		window.fillWindowingTables(bufferSize, dsp::WindowingFunction<float>::hann);
+		break;
+	case 3:
+		window.fillWindowingTables(bufferSize, dsp::WindowingFunction<float>::hamming);
+		break;
+	case 4:
+		window.fillWindowingTables(bufferSize, dsp::WindowingFunction<float>::blackman);
+		break;
+	case 5:
+		window.fillWindowingTables(bufferSize, dsp::WindowingFunction<float>::blackmanHarris);
+		break;
+	case 6:
+		window.fillWindowingTables(bufferSize, dsp::WindowingFunction<float>::flatTop);
+		break;
+	default:
+		break;
+	}
+	currentWindowChoice = choice;
 }
 
 //==============================================================================
