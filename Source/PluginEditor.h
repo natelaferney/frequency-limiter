@@ -13,10 +13,11 @@
 #include "../JuceLibraryCode/JuceHeader.h"
 #include "PluginProcessor.h"
 typedef AudioProcessorValueTreeState::SliderAttachment SliderAttachment;
+typedef AudioProcessorValueTreeState::ComboBoxAttachment ComboBoxAttachment;
 //==============================================================================
 /**
 */
-class FrequencyLimiterAudioProcessorEditor  : public AudioProcessorEditor, public Slider::Listener
+class FrequencyLimiterAudioProcessorEditor  : public AudioProcessorEditor, public Slider::Listener, public ComboBox::Listener
 {
 public:
     FrequencyLimiterAudioProcessorEditor (FrequencyLimiterAudioProcessor&, AudioProcessorValueTreeState& vts);
@@ -26,6 +27,7 @@ public:
     void paint (Graphics&) override;
     void resized() override;
 	void sliderValueChanged(Slider * slider) override;
+	void comboBoxChanged(ComboBox * comboBox) override;
 
 private:
     // This reference is provided as a quick way for your editor to
@@ -41,5 +43,7 @@ private:
 	ScopedPointer<Label> thresholdLabel;
 	ScopedPointer<Label> gainLabel;
 	ScopedPointer<Label> mixLabel;
+	ScopedPointer<ComboBox> windowComboBox;
+	ScopedPointer<ComboBoxAttachment> windowComboBoxAttachment;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FrequencyLimiterAudioProcessorEditor)
 };

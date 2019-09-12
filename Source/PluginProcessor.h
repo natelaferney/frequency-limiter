@@ -64,15 +64,21 @@ public:
 
 private:
     //==============================================================================
+	void switchWindow(int choice, int bufferSize);
+
 	AudioProcessorValueTreeState parameters;
 	float * threshold;
 	float * gain;
 	float * mix;
+	float * windowChoice;
 	float previousGain{ 1.0f };
 	std::vector<kiss_fft_scalar> realBufferFFT;
 	std::vector<kiss_fft_cpx> complexBufferFFT;
 	kiss_fftr_cfg cfgFFT;
 	kiss_fftr_cfg cfgIFFT;
 	int oldSamplesPerBlock{ 0 };
+	dsp::WindowingFunction<float> window;
+	std::vector<kiss_fft_cpx> sidechainBufferFFT;
+	int currentWindowChoice{ 0 };
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FrequencyLimiterAudioProcessor)
 };

@@ -15,26 +15,31 @@
 static const int MINIMUM_BUFFER_SIZE = 32;
 static const float BUFFER_OFFSET_FACTOR = 1.5;
 static const kiss_fft_cpx zeroComplex = { 0.0f, 0.0f };
+static const Array<String> windowChoices = { "rectangular", "triangular", "hann", "hamming", "blackman", "blackmanHarris",
+"flatTop"};
 //==============================================================================
 FrequencyLimiterAudioProcessor::FrequencyLimiterAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
-     : AudioProcessor (BusesProperties()
-                     #if ! JucePlugin_IsMidiEffect
-                      #if ! JucePlugin_IsSynth
-                       .withInput  ("Input",  AudioChannelSet::stereo(), true)
-                      #endif
-                       .withOutput ("Output", AudioChannelSet::stereo(), true)
-                     #endif
-                       ),
+	: AudioProcessor(BusesProperties()
+#if ! JucePlugin_IsMidiEffect
+#if ! JucePlugin_IsSynth
+		.withInput("Input", AudioChannelSet::stereo(), true)
+#endif
+		.withOutput("Output", AudioChannelSet::stereo(), true)
+#endif
+	),
 #endif
 	parameters(*this, nullptr, Identifier("FrequencyCleaner"),
 		{ std::make_unique<AudioParameterFloat>("threshold", "Threshold", NormalisableRange<float>(-100.0f, 0.0f, 0.1f), 0.0f),
 		std::make_unique<AudioParameterFloat>("gain", "Makeup Gain", NormalisableRange<float>(0.0f, 20.0f, 0.1f), 0.0f),
-		std::make_unique<AudioParameterFloat>("mix", "Mix", NormalisableRange<float>(0.0f, 100.0f, 1.0f), 100.0f)})
+		std::make_unique<AudioParameterFloat>("mix", "Mix", NormalisableRange<float>(0.0f, 100.0f, 1.0f), 100.0f),
+		std::make_unique<AudioParameterChoice>("window", "Window", windowChoices, 0) }),
+	window(1024, dsp::WindowingFunction<float>::hann)
 {
 	threshold = parameters.getRawParameterValue("threshold");
 	gain = parameters.getRawParameterValue("gain");
 	mix = parameters.getRawParameterValue("mix");
+	windowChoice = parameters.getRawParameterValue("window");
 	cfgFFT = NULL;
 	cfgIFFT = NULL;
 }
@@ -103,10 +108,17 @@ void FrequencyLimiterAudioProcessor::prepareToPlay (double sampleRate, int sampl
 	if (N % 2 == 1) N += 1;
 	int K = N / 2 + 1;
 	realBufferFFT.resize(N, 0.0f);
-	complexBufferFFT.resize(K);
+	complexBufferFFT.resize(K, zeroComplex);
 	cfgFFT = kiss_fftr_alloc(N, 0, NULL, NULL);
 	cfgIFFT = kiss_fftr_alloc(N, 1, NULL, NULL);
 	oldSamplesPerBlock = N;
+
+	//windowing function
+	sidechainBufferFFT.resize(K, zeroComplex);
+	int choiceOfWindow = (int)*windowChoice;
+	if (choiceOfWindow != currentWindowChoice) switchWindow(choiceOfWindow, N);
+
+	//window.fillWindowingTables(N, juce::dsp::WindowingFunction<float>::hann);
 }
 
 void FrequencyLimiterAudioProcessor::releaseResources()
@@ -124,6 +136,7 @@ void FrequencyLimiterAudioProcessor::releaseResources()
 
 	std::fill(realBufferFFT.begin(), realBufferFFT.end(), 0.0f);
 	std::fill(complexBufferFFT.begin(), complexBufferFFT.end(), zeroComplex);
+	std::fill(sidechainBufferFFT.begin(), sidechainBufferFFT.end(), zeroComplex);
 }
 
 bool FrequencyLimiterAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -144,11 +157,13 @@ void FrequencyLimiterAudioProcessor::processBlock (AudioBuffer<float>& buffer, M
 	int K = N / 2 + 1;
 	const float thresholdValue = Decibels::decibelsToGain(*threshold);
 	const float gainValue = Decibels::decibelsToGain(*gain);
-	float tempRadius;
+	float sidechainRadius;
+	float mainRadius;
 	float tempAngle;
 	float newRadius;
 	const float mixValue = *mix / 100.0f;
 	float newSampleValue;
+	int choiceOfWindow = (int)*windowChoice;
 	std::complex<float> tempComplex;
 	if (N < bufferSize)
 	{
@@ -165,6 +180,8 @@ void FrequencyLimiterAudioProcessor::processBlock (AudioBuffer<float>& buffer, M
 		oldSamplesPerBlock = N;
 	}
 
+	if (choiceOfWindow != currentWindowChoice) switchWindow(choiceOfWindow, N);
+
 	std::fill(realBufferFFT.begin(), realBufferFFT.end(), 0.0f);
 
 	for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
@@ -174,11 +191,14 @@ void FrequencyLimiterAudioProcessor::processBlock (AudioBuffer<float>& buffer, M
 	{
 		for (int i = 0; i < bufferSize; ++i) realBufferFFT[i] = buffer.getSample(channel, i);
 		kiss_fftr(cfgFFT, &realBufferFFT[0], &complexBufferFFT[0]);
+		window.multiplyWithWindowingTable(&realBufferFFT[0], N);
+		kiss_fftr(cfgFFT, &realBufferFFT[0], &sidechainBufferFFT[0]);
 		for (int i = 0; i < K; ++i)
 		{
-			tempRadius = std::sqrt(std::pow(std::abs(complexBufferFFT[i].r), 2) + std::pow(std::abs(complexBufferFFT[i].i), 2)) / N;
+			mainRadius = std::sqrt(std::pow(std::abs(complexBufferFFT[i].r), 2) + std::pow(std::abs(complexBufferFFT[i].i), 2)) / N;
+			sidechainRadius = std::sqrt(std::pow(std::abs(sidechainBufferFFT[i].r), 2) + std::pow(std::abs(sidechainBufferFFT[i].i), 2)) / N;
 			tempAngle = atan2(complexBufferFFT[i].i, complexBufferFFT[i].r);
-			newRadius = (tempRadius > thresholdValue) ? thresholdValue : tempRadius;
+			newRadius = (sidechainRadius > thresholdValue) ? thresholdValue : mainRadius;
 			tempComplex = std::polar(newRadius, tempAngle);
 			complexBufferFFT[i].r = std::real(tempComplex);
 			complexBufferFFT[i].i = std::imag(tempComplex);
@@ -219,32 +239,67 @@ void FrequencyLimiterAudioProcessor::getStateInformation (MemoryBlock& destData)
 	xml->setAttribute(Identifier("thresholdParameter"), (double)parameters.getParameter("threshold")->convertTo0to1(*threshold));
 	xml->setAttribute(Identifier("mixParameter"), (double)parameters.getParameter("mix")->convertTo0to1(*mix));
 	xml->setAttribute(Identifier("gainParameter"), (double)parameters.getParameter("gain")->convertTo0to1(*gain));
+	xml->setAttribute(Identifier("windowParameter"), (double)parameters.getParameter("window")->convertTo0to1(*windowChoice));
 	copyXmlToBinary(*xml, destData);
 	delete xml;
 }
 
 void FrequencyLimiterAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-	XmlElement * xmlState = getXmlFromBinary(data, sizeInBytes);
+	std::unique_ptr<XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
 	if (xmlState != nullptr)
 	{
 		const float thresholdValue = (float)xmlState->getDoubleAttribute("thresholdParameter", 1.0f);
 		const float gainValue = (float)xmlState->getDoubleAttribute("gainParameter", 0.0f);
 		const float mixValue = (float)xmlState->getDoubleAttribute("mixParameter", 1.0f);
+		const float windowChoiceValue = (float)xmlState->getDoubleAttribute("windowParameter", 0.0f);
 
 		parameters.getParameter("threshold")->beginChangeGesture();
 		parameters.getParameter("gain")->beginChangeGesture();
 		parameters.getParameter("mix")->beginChangeGesture();
+		parameters.getParameter("window")->beginChangeGesture();
 
 		parameters.getParameter("threshold")->setValueNotifyingHost(thresholdValue);
 		parameters.getParameter("gain")->setValueNotifyingHost(gainValue);
 		parameters.getParameter("mix")->setValueNotifyingHost(mixValue);
+		parameters.getParameter("window")->setValueNotifyingHost(windowChoiceValue);
 
 		parameters.getParameter("threshold")->endChangeGesture();
 		parameters.getParameter("gain")->endChangeGesture();
 		parameters.getParameter("mix")->endChangeGesture();
+		parameters.getParameter("window")->endChangeGesture();
 	}
-	delete xmlState;
+}
+
+void FrequencyLimiterAudioProcessor::switchWindow(int choice, int bufferSize)
+{
+	switch (choice)
+	{
+	case 0:
+		window.fillWindowingTables(bufferSize, dsp::WindowingFunction<float>::rectangular);
+		break;
+	case 1:
+		window.fillWindowingTables(bufferSize, dsp::WindowingFunction<float>::triangular);
+		break;
+	case 2:
+		window.fillWindowingTables(bufferSize, dsp::WindowingFunction<float>::hann);
+		break;
+	case 3:
+		window.fillWindowingTables(bufferSize, dsp::WindowingFunction<float>::hamming);
+		break;
+	case 4:
+		window.fillWindowingTables(bufferSize, dsp::WindowingFunction<float>::blackman);
+		break;
+	case 5:
+		window.fillWindowingTables(bufferSize, dsp::WindowingFunction<float>::blackmanHarris);
+		break;
+	case 6:
+		window.fillWindowingTables(bufferSize, dsp::WindowingFunction<float>::flatTop);
+		break;
+	default:
+		break;
+	}
+	currentWindowChoice = choice;
 }
 
 //==============================================================================
