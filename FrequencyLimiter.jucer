@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<JUCERPROJECT id="YdNxnz" name="FrequencyLimiter" projectType="audioplug" jucerVersion="5.4.1"
+<JUCERPROJECT id="YdNxnz" name="FrequencyLimiter" projectType="audioplug" jucerVersion="5.4.4"
               companyName="NateOnTheBeat" companyWebsite="www.nateonthebeat.com"
               companyEmail="justnateonthebeat@gmail.com" pluginFormats="buildAU,buildStandalone,buildVST3"
-              pluginAUIsSandboxSafe="1">
+              pluginAUIsSandboxSafe="1" version="2.0">
   <MAINGROUP id="QKNPh7" name="FrequencyLimiter">
     <GROUP id="{0B19CDE6-DA80-90FC-8C8F-82B5E5C0DA10}" name="Source">
       <FILE id="fr3DiD" name="kiss_fftr.c" compile="1" resource="0" file="Source/KissFFT/tools/kiss_fftr.c"/>

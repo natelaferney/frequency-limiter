@@ -45,5 +45,6 @@ private:
 	ScopedPointer<Label> mixLabel;
 	ScopedPointer<ComboBox> windowComboBox;
 	ScopedPointer<ComboBoxAttachment> windowComboBoxAttachment;
+	ScopedPointer<Label> windowComboBoxLabel;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FrequencyLimiterAudioProcessorEditor)
 };

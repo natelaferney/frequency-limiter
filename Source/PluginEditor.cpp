@@ -53,12 +53,15 @@ FrequencyLimiterAudioProcessorEditor::FrequencyLimiterAudioProcessorEditor (Freq
 	gainLabel->setText("Gain", dontSendNotification);
 
 	addAndMakeVisible(windowComboBox = new ComboBox());
-	windowComboBox->setBounds(20, 480, 100, 26);
+	windowComboBox->setBounds(20, 500, 100, 26);
 	for (int i = 0; i < windowChoices.size(); ++i)
 	{
 		windowComboBox->addItem(windowChoices[i], i + 1);
 	}
 	windowComboBoxAttachment.reset(new ComboBoxAttachment(valueTreeState, "window", *windowComboBox));
+	addAndMakeVisible(windowComboBoxLabel = new Label());
+	windowComboBoxLabel->setBounds(20, 465, 100, 50);
+	windowComboBoxLabel->setText("Window", dontSendNotification);
 }
 
 FrequencyLimiterAudioProcessorEditor::~FrequencyLimiterAudioProcessorEditor()
